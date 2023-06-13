@@ -2,49 +2,22 @@ import { prisma } from "@/lib/prisma";
 import { compare } from "bcryptjs";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import CognitoProvider from "next-auth/providers/cognito";
 
 export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
   providers: [
-    CredentialsProvider({
-      name: "Sign in",
-      credentials: {
-        email: {
-          label: "Email",
-          type: "email",
-          placeholder: "example@example.com",
-        },
-        password: { label: "Password", type: "password" },
-      },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials.password) {
-          return null;
-        }
-
-        const user = await prisma.user.findUnique({
-          where: {
-            email: credentials.email,
-          },
-        });
-
-        if (!user || !(await compare(credentials.password, user.password))) {
-          return null;
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          randomKey: "Hey cool",
-        };
-      },
+    CognitoProvider({
+      clientId: process.env.COGNITO_CLIENT_ID as string,
+      clientSecret: process.env.COGNITO_CLIENT_SECRET as string,
+      issuer: process.env.COGNITO_ISSUER as string,
     }),
   ],
   callbacks: {
     session: ({ session, token }) => {
-      console.log("Session Callback", { session, token });
+      // console.log("Session Callback", { session, token });
       return {
         ...session,
         user: {
@@ -54,8 +27,25 @@ export const authOptions: NextAuthOptions = {
         },
       };
     },
+    signIn: async ({ user }) => {
+      const userRegistered = await prisma.userApp.findFirst({
+        where: {
+          email: user.email as string,
+        },
+      });
+
+      if (!userRegistered)
+        await prisma.userApp.create({
+          data: {
+            email: user.email as string,
+            name: user.name as string,
+          },
+        });
+
+      return true;
+    },
     jwt: ({ token, user }) => {
-      console.log("JWT Callback", { token, user });
+      // console.log("JWT Callback", { token, user });
       if (user) {
         const u = user as unknown as any;
         return {
